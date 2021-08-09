@@ -230,35 +230,7 @@ def train(args):
                     torch.save(model.state_dict(), f'{saving_name}_last.pt')
 
 
-def eval(args):
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-    label2id = build_dict(UTIL_TAGS + ['GENE'], ['B-', 'I-', 'E-', 'S-'])
-    label_map = {value: key for key, value in label2id.items()}
-    num_labels = len(label_map)
-    teacher_config = BertConfig.from_pretrained(
-        args.model_name_or_path,
-        num_labels=num_labels,
-        id2label=label_map,
-        label2id=label2id,
-    )
-    teacher_model = BertForTokenClassification.from_pretrained(args.model_name_or_path, config=teacher_config).to(
-        device)
-    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    if args.teacher_checkpoint is not None:
-        teacher_model.load_state_dict(torch.load(args.teacher_checkpoint))
-    teacher_model.eval()
-
-    train_dataloader, val_dataloader = get_bc2gm_train_data(args, tokenizer,
-                                                            label2id, return_train=True, return_val=True)
-
-    _, met = evaluate_ner_metrics(teacher_model, val_dataloader, label_map, tokenizer)
-    print(met)
-
-
 if __name__ == "__main__":
     args = setup_argparser().parse_args()
     if args.do_train:
         train(args)
-    else:
-        eval(args)
