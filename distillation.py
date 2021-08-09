@@ -19,7 +19,15 @@ from log import setup_logging
 from loss import loss as ner_loss
 from ner_utils import build_dict
 from tags import UTIL_TAGS
-from train import set_seed
+import random
+
+
+def set_seed(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if args.n_gpu > 0:
+        torch.cuda.manual_seed_all(args.seed)
 
 
 def setup_argparser() -> argparse.ArgumentParser:
