@@ -23,6 +23,7 @@ from loss import loss as ner_loss
 from ner_utils import build_dict
 from tags import UTIL_TAGS
 import random
+from copy import deepcopy
 
 
 def set_seed(args):
@@ -106,7 +107,7 @@ class BiLSTMConfig:
 @dataclass
 class BiLSTMOutput:
     logits: torch.Tensor
-
+    
 
 class MultiChannelEmbedding(nn.Module):
     def __init__(self, vocab_size, embedding_size, out_channels, filters: list):
@@ -139,8 +140,10 @@ class BiLSTMForTokenClassification(nn.Module):
                  bert=None):
         super().__init__()
 
+        self.embedding_type = embedding
         if embedding == 'bert' and bert is not None:
-            self.embedding = bert.bert.embeddings
+            self.embedding = deepcopy(bert.bert.embeddings)
+
         elif embedding == 'multichannel':
             self.embedding = MultiChannelEmbedding(vocab_size=vocab_size,
                                                    embedding_size=config.embedding_size,
@@ -156,13 +159,15 @@ class BiLSTMForTokenClassification(nn.Module):
                             dropout=config.dropout,
                             batch_first=True,
                             bidirectional=True)
-        # self.linear = nn.Linear(2 * config.hidden_size, n_classes)
-        self.linear = nn.Sequential(
-            nn.Linear(2 * config.hidden_size, config.classifier_size),
-            nn.ReLU(),
-            nn.Dropout(config.dropout),
-            nn.Linear(config.classifier_size, n_classes)
-        )
+        if not config.classifier_size:
+            self.linear = nn.Linear(2 * config.hidden_size, n_classes)
+        else:
+            self.linear = nn.Sequential(
+                nn.Linear(2 * config.hidden_size, config.classifier_size),
+                nn.ReLU(),
+                nn.Dropout(config.dropout),
+                nn.Linear(config.classifier_size, n_classes)
+            )
         self.dropout = nn.Dropout(0.5)
         self.device = device
 
