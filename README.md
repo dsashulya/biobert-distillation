@@ -28,7 +28,7 @@ NE count train** | Learning rate  | BERT embeddings | Embedding size | LSTM hidd
 
 NE count train** | Learning rate  | BERT embeddings | Embedding size | LSTM hidden size | Classifier hidden size* | Epochs | F1 score | Size
 ----- | ------------ | ------------- | ------------ | ------------- | ------------ | ------------ | -------- | ------
-15K | 1e-3 | - | 300 | 300 | 256 | 50 | 0.7741 | 46.9M
+15K | 1e-3 | - | 300 | 300 | 256 | 50 | 0.7668 | 47.6M
 56K | 1e-3 | - | 300 | 300 | - | 50 | 0.8004 | 46.9M
 56K | 1e-3 | - | 300 | 300 | 256 | 50 | 0.8010 | 47.6M
 56K | 1e-3 | + | 768 | 300 | 256 | 30 | 0.8130 | 105M
