@@ -36,15 +36,17 @@ NE count train** | Learning rate  | Epochs | F1 score | Size | Avg time
 
 **Student model**
 
-NE count train** | Learning rate  | BERT embeddings | Embedding size | LSTM hidden size | Classifier hidden size* | Epochs | F1 score | Size | Avg time
------ | ------------ | ------------- | ------------ | ------------- | ------------ | ------------ | -------- | ------ | ---
-15K | 1e-3 | - | 300 | 300 | 256 | 50 | 0.7668 | 47.6M | 1.64ms
-56K | 1e-3 | - | 300 | 300 | - | 50 | 0.8004 | 46.9M | 1.57ms
-56K | 1e-3 | - | 300 | 300 | 256 | 50 | 0.8010 | 47.6M | 1.64ms
-56K | 1e-3 | + | 768 | 300 | 256 | 30 | 0.8130 | 105M | 1.79ms
-138K | 1e-3 | - | 300 | 200 | 256 | 50 | 0.8165 | 40.3M | 1.6ms
-138K | 1e-3 | - | 300 | 300| 256 | 50 | 0.8210 | 47.6M | 1.64ms
-262K | 1e-3 | - | 300 | 300 | 256 | 30 | 0.8284 | 47.6M | 1.64ms
+Learning rate used = *1e-3*.
+
+NE count train**   | BERT embeddings | Embedding size | LSTM hidden size | Classifier hidden size* | Epochs | F1 score | Size | Avg time
+----- | ------------- | ------------ | ------------- | ------------ | ------------ | -------- | ------ | ---
+15K |  - | 300 | 300 | 256 | 50 | 0.7668 | 47.6M | 1.64ms
+56K |  - | 300 | 300 | - | 50 | 0.8004 | 46.9M | 1.57ms
+56K |  - | 300 | 300 | 256 | 50 | 0.8010 | 47.6M | 1.64ms
+56K |  + | 768 | 300 | 256 | 30 | 0.8130 | 105M | 1.79ms
+138K |  - | 300 | 200 | 256 | 50 | 0.8165 | 40.3M | 1.6ms
+138K |  - | 300 | 300| 256 | 50 | 0.8210 | 47.6M | 1.64ms
+262K |  - | 300 | 300 | 256 | 30 | 0.8284 | 47.6M | 1.64ms
 
 
 &ast; classifier hidden size '-' means one linear layer was used
