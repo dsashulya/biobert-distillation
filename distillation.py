@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime
+from typing import Tuple, Any
 
 import numpy as np
 import torch
@@ -37,13 +38,16 @@ def set_seed(args):
 def setup_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', default=10, type=int, required=False)
+    parser.add_argument('--measure_time', default=False, type=lambda x: bool(int(x)), required=False)
     parser.add_argument('--do_train', default=False, type=lambda x: bool(int(x)), required=False)
     parser.add_argument('--do_eval', default=False, type=lambda x: bool(int(x)), required=False)
     parser.add_argument('--local_rank', default=-1, type=int, required=False)
     parser.add_argument('--world_size', default=1, type=int, required=False)
     parser.add_argument('--n_gpu', default=1, type=int, required=False)
     parser.add_argument('--logging_level', default=20, type=int, required=False)
-    parser.add_argument('--model_name_or_path', default=None, type=str, required=True,
+    parser.add_argument('--teacher_model_name_or_path', default=None, type=str, required=False,
+                        help="used in model_class.from_pretrained()")
+    parser.add_argument('--student_model_name_or_path', default=None, type=str, required=False,
                         help="used in model_class.from_pretrained()")
     parser.add_argument('--teacher_checkpoint', default=None, type=str, required=False,
                         help="checkpoint to load the model from")
@@ -104,10 +108,6 @@ class BiLSTMConfig:
     classifier_size: int
 
 
-@dataclass
-class BiLSTMOutput:
-    logits: torch.Tensor
-    
 
 class MultiChannelEmbedding(nn.Module):
     def __init__(self, vocab_size, embedding_size, out_channels, filters: list):
@@ -185,7 +185,8 @@ class BiLSTMForTokenClassification(nn.Module):
 
 
 def write_params(writer, args):
-    output = f'Model path {args.model_name_or_path}  \n'
+    output = f'Teacher model path {args.teacher_model_name_or_path}  \n'
+    output += f'Student model path {args.student_model_name_or_path}  \n'
     output += f'Task name {args.task_name}  \n'
     output += f'Use distillation {args.distillation}  \n'
     output += f'Epochs {args.num_train_epochs}  \n'
@@ -216,37 +217,67 @@ def init_model(args):
     args.label_map = label_map
 
     teacher_model = None
-    if args.distillation and (args.do_train or args.embedding_type == 'bert'):
+    teacher_tokenizer = None
+    teacher_config = None
+    if args.distillation and (args.do_train or args.embedding_type == 'bert' or (args.measure_time
+                                                                                 and args.teacher_checkpoint)):
         teacher_config = BertConfig.from_pretrained(
-            args.model_name_or_path,
+            args.teacher_model_name_or_path,
             num_labels=num_labels,
             id2label=label_map,
             label2id=label2id,
         )
-        teacher_model = BertForTokenClassification.from_pretrained(args.model_name_or_path, config=teacher_config).to(
+        teacher_model = BertForTokenClassification.from_pretrained(args.teacher_model_name_or_path,
+                                                                   config=teacher_config).to(
             args.device)
         if args.teacher_checkpoint is not None:
             teacher_model.load_state_dict(torch.load(args.teacher_checkpoint))
         teacher_model.eval()
 
-    config = BiLSTMConfig(
-        n_layers=args.n_layers,
-        embedding_size=args.embedding_size,
-        hidden_size=args.hidden_size,
-        dropout=args.dropout,
-        classifier_size=args.classifier_size
-    )
-    tokenizer = BertTokenizer.from_pretrained(args.model_name_or_path)
-    if args.embedding_type == 'bert' and args.distillation:
-        model = BiLSTMForTokenClassification(config, tokenizer.vocab_size, num_labels, args.device,
-                                             bert=teacher_model, embedding=args.embedding_type).to(args.device)
+        teacher_tokenizer = BertTokenizer.from_pretrained(args.teacher_model_name_or_path)
+
+    if args.student_model_name_or_path is None:
+        config = BiLSTMConfig(
+            n_layers=args.n_layers,
+            embedding_size=args.embedding_size,
+            hidden_size=args.hidden_size,
+            dropout=args.dropout,
+            classifier_size=args.classifier_size
+        )
+        student_tokenizer = BertTokenizer.from_pretrained(args.teacher_model_name_or_path)
+        if args.embedding_type == 'bert' and args.distillation:
+            model = BiLSTMForTokenClassification(config, student_tokenizer.vocab_size, num_labels, args.device,
+                                                 bert=teacher_model, embedding=args.embedding_type).to(args.device)
+        else:
+            model = BiLSTMForTokenClassification(config, student_tokenizer.vocab_size, num_labels, args.device,
+                                                 bert=None, embedding=args.embedding_type).to(args.device)
     else:
-        model = BiLSTMForTokenClassification(config, tokenizer.vocab_size, num_labels, args.device,
-                                             bert=None, embedding=args.embedding_type).to(args.device)
+        config = BertConfig(
+            attention_probs_dropout_prob=0.1,
+            cell={},
+            model_type="bert",
+            hidden_act="gelu",
+            hidden_dropout_prob=0.1,
+            hidden_size=312,
+            initializer_range=0.02,
+            intermediate_size=1200,
+            max_position_embeddings=512,
+            num_attention_heads=12,
+            num_hidden_layers=4,
+            pre_trained="",
+            structure=[],
+            type_vocab_size=2,
+            vocab_size=28996,
+            num_labels=num_labels,
+            id2label=label_map,
+            label2id=label2id,
+        )
+        student_tokenizer = BertTokenizer.from_pretrained(args.teacher_model_name_or_path)
+        model = TinyBertForTokenClassification(config=config, device=args.device).to(args.device)
 
     if args.student_checkpoint is not None:
         model.load_state_dict(torch.load(args.student_checkpoint))
-    return tokenizer, model, teacher_model
+    return student_tokenizer, model, teacher_tokenizer, teacher_model
 
 
 class DistillLoss:
@@ -255,12 +286,26 @@ class DistillLoss:
         self.alpha = alpha
         self.loss_func = loss_func
 
-    def get_loss(self, logits: torch.Tensor, batch: dict):
+    def get_loss(self, output, batch: dict):
         with torch.no_grad():
-            teacher_output = self.teacher(**batch)
-        loss = self.loss_func(logits.cpu(), batch['labels'].cpu(), batch['attention_mask'].cpu())
-        loss_distill = F.mse_loss(teacher_output.logits, logits)
+            teacher_output = self.teacher(**batch, output_hidden_states=True, output_attentions=True)
+
+        loss = self.loss_func(output.logits.cpu(), batch['labels'].cpu(), batch['attention_mask'].cpu())
+        loss_distill = F.mse_loss(teacher_output.logits, output.logits)
+        if output.attentions and output.hidden_states:
+            loss_emb = F.mse_loss(teacher_output.hidden_states[0], output.hidden_states[0])
+            hidden_aligned = [teacher_output.hidden_states[i] for i in range(1, len(teacher_output.hidden_states), 3)]
+            loss_hid, loss_attn = 0., 0.
+            for teacher_hid, student_hid in zip(hidden_aligned, output.hidden_states):
+                loss_hid += F.mse_loss(teacher_hid, student_hid)
+
+            attn_aligned = [teacher_output.attentions[i] for i in range(0, len(teacher_output.attentions), 3)]
+            for teacher_attn, student_attn in zip(attn_aligned, output.attentions):
+                loss_attn += F.mse_loss(teacher_attn, student_attn)
+            loss_distill += loss_emb + loss_hid + loss_attn
+
         return args.alpha * loss + (1 - args.alpha) * loss_distill
+
 
 
 class NoDistillLoss:
@@ -272,12 +317,16 @@ class NoDistillLoss:
 
 
 class NerData:
-    def __init__(self, tokenizer: PreTrainedTokenizer, tags_vocab: dict):
-        self.tokenizer = tokenizer
+    def __init__(self, student_tokenizer: PreTrainedTokenizer,
+                 teacher_tokenizer: PreTrainedTokenizer,
+                 tags_vocab: dict):
+        self.student_tokenizer = student_tokenizer
+        self.teacher_tokenizer = teacher_tokenizer
         self.tags_vocab = tags_vocab
 
-    def get_inputs(self, batch):
-        return get_ner_model_inputs(batch, self.tokenizer, self.tags_vocab)
+    def get_inputs(self, batch, teacher=False):
+        return get_ner_model_inputs(batch, self.student_tokenizer if not teacher else self.teacher_tokenizer,
+                                    self.tags_vocab)
 
 
 class Data:
@@ -309,16 +358,51 @@ class Evaluator:
         return val_loss, metrics
 
 
+class TinyBertForTokenClassification(nn.Module):
+    def __init__(self, config, fit_size=768, device: torch.device = torch.device("cuda")):
+        super(TinyBertForTokenClassification, self).__init__()
+        self.bert = BertForTokenClassification(config=config)
+        self.W_emb = nn.Linear(config.hidden_size, fit_size)
+        self.W_hidden = nn.Linear(config.hidden_size, fit_size)
+        self.device = device
+
+    def forward(self, input_ids, **kwargs):
+        out = self.bert(input_ids, **kwargs, output_hidden_states=True, output_attentions=True)
+        logits, hidden, attentions = out.logits, out.hidden_states, out.attentions
+        hidden = tuple([self.W_emb(hidden[0])] + [self.W_hidden(hidden_el) for hidden_el in hidden[1:]])
+        return TinyBertOutput(logits=logits, hidden_states=hidden, attentions=attentions)
+
+
+@dataclass
+class TinyBertOutput:
+    logits: torch.Tensor
+    hidden_states: Tuple[Any]
+    attentions: Tuple[Any]
+
+@dataclass
+class BiLSTMOutput:
+    logits: torch.Tensor
+    hidden_states: Tuple[Any] = tuple()
+    attentions: Tuple[Any] = tuple()
+
+
 def train(args):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     args.device = device
     saving_name = f'{args.model_name}-{datetime.now():%Y%m%d-%H%M-%S}'
 
-    tokenizer, model, teacher_model = init_model(args)
+    student_tokenizer, model, teacher_tokenizer, teacher_model = init_model(args)
     optimizer = AdamW(model.parameters(), lr=args.lr_params, weight_decay=args.weight_decay)
 
-    train_dataloader, val_dataloader = get_bc2gm_train_data(args, tokenizer,
+    # student tokenizer used
+    train_dataloader, val_dataloader = get_bc2gm_train_data(args, student_tokenizer,
                                                             args.label2id, return_train=True, return_val=True)
+
+    teacher_train_dataloader = [[] for _ in range(len(train_dataloader))]
+    if args.student_model_name_or_path:
+        # teacher tokenizer used
+        teacher_train_dataloader, _ = get_bc2gm_train_data(args, teacher_tokenizer,
+                                                           args.label2id, return_train=True, return_val=False)
 
     update_steps = args.update_steps_start
     set_seed(args)
@@ -334,20 +418,25 @@ def train(args):
     eval_func = evaluate_ner_metrics if args.task_name == 'ner' else None
 
     loss_cls = DistillLoss(loss_func, teacher_model, args.alpha) if args.distillation else NoDistillLoss(loss_func)
-    data_cls = NerData(tokenizer, tags_vocab) if args.task_name == 'ner' else Data()
+    data_cls = NerData(student_tokenizer, teacher_tokenizer, tags_vocab) if args.task_name == 'ner' else Data()
     evaluator = Evaluator(model, eval_func, val_dataloader, writer, saving_name)
     # eval
     _, metrics = evaluator.evaluate_and_write(update_steps,
-                                              label_map=args.label_map, tokenizer=tokenizer)
+                                              label_map=args.label_map, tokenizer=student_tokenizer)
     for epoch in range(args.num_train_epochs):
-        epoch_iterator = tqdm(train_dataloader, desc="Train iteration", position=0, leave=True)
-        for step, batch in enumerate(epoch_iterator):
+        epoch_iterator = tqdm(zip(train_dataloader, teacher_train_dataloader),
+                              desc="Train iteration", position=0, leave=True, total=len(train_dataloader))
+        for step, (batch, teacher_batch) in enumerate(epoch_iterator):
             model.train()
             batch = data_cls.get_inputs(batch)
             batch = {key: value.to(model.device) for key, value in batch.items()}
             output = model(**batch)
 
-            loss = loss_cls.get_loss(output.logits, batch)
+            if teacher_batch:
+                teacher_batch = data_cls.get_inputs(teacher_batch, teacher=True)
+                teacher_batch = {key: value.to(model.device) for key, value in teacher_batch.items()}
+
+            loss = loss_cls.get_loss(output, batch if not teacher_batch else teacher_batch)
 
             if args.gradient_accumulation_steps > 1:
                 loss /= args.gradient_accumulation_steps
@@ -365,7 +454,7 @@ def train(args):
 
                 if update_steps % args.eval_steps == 0:
                     _, metrics = evaluator.evaluate_and_write(update_steps,
-                                                              label_map=args.label_map, tokenizer=tokenizer)
+                                                              label_map=args.label_map, tokenizer=student_tokenizer)
 
                 if update_steps % args.save_steps:
                     torch.save(model.state_dict(), f'{saving_name}_last.pt')
@@ -375,7 +464,7 @@ def eval(args):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     args.device = device
 
-    tokenizer, model, _ = init_model(args)
+    tokenizer, model, _, _ = init_model(args)
     model.eval()
 
     writer = None
@@ -389,9 +478,64 @@ def eval(args):
     print(metrics)
 
 
+def measure_time(args):
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    args.device = device
+    args.batch_size = 1
+
+    tokenizer, model, teacher_tokenizer, teacher_model = init_model(args)
+    model.eval()
+    if teacher_model is not None:
+        teacher_model.eval()
+
+    _, val_dataloader = get_bc2gm_train_data(args, tokenizer, args.label2id, return_train=False, return_val=True)
+    if teacher_tokenizer is not None:
+        _, teacher_val_dataloader = get_bc2gm_train_data(args, teacher_tokenizer, args.label2id,
+                                                         return_train=False, return_val=True)
+    else:
+        teacher_val_dataloader = val_dataloader
+
+    tags_vocab = {value: key for key, value in args.label_map.items()}
+    data_cls = NerData(tokenizer, teacher_tokenizer, tags_vocab) if args.task_name == 'ner' else Data()
+    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+
+    # gpu warm-up
+    for batch in tqdm(val_dataloader, desc="GPU warm-up"):
+        batch = data_cls.get_inputs(batch)
+        _ = model(**{key: value.to(device) for key, value in batch.items()})
+
+    student_times = torch.zeros(len(val_dataloader))
+    teacher_times = torch.zeros(len(val_dataloader))
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(val_dataloader, desc="Evaluation")):
+            batch = data_cls.get_inputs(batch)
+            batch = {key: value.to(device) for key, value in batch.items()}
+            starter.record()
+            _ = model(**batch)
+            ender.record()
+            torch.cuda.synchronize()
+            student_times[i] = starter.elapsed_time(ender)
+
+    if teacher_model is not None:
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(teacher_val_dataloader, desc="Teacher")):
+                batch = data_cls.get_inputs(batch)
+                batch = {key: value.to(device) for key, value in batch.items()}
+                starter.record()
+                _ = teacher_model(**batch)
+                ender.record()
+                torch.cuda.synchronize()
+                teacher_times[i] = starter.elapsed_time(ender)
+
+    print(f"Teacher time: mean = {teacher_times.mean()}, std = {teacher_times.std()}")
+    print(f"Student time: mean = {student_times.mean()}, std = {student_times.std()}")
+
+
 if __name__ == "__main__":
     args = setup_argparser().parse_args()
-    if args.do_train:
+    if args.measure_time:
+        measure_time(args)
+    elif args.do_train:
         train(args)
     else:
         eval(args)

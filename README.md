@@ -34,7 +34,7 @@ NE count train** | Learning rate  | Epochs | F1 score | Size | Avg time
 15K | 1e-5 | 80 | 0.8663 | 411M | 9.1ms
 
 
-**Student model**
+**Student model: BiLSTM**
 
 Learning rate used = *1e-3*.
 
@@ -47,6 +47,13 @@ NE count train**   | BERT embeddings | Embedding size | LSTM hidden size | Class
 138K |  - | 300 | 200 | 256 | 50 | 0.8165 | 40.3M | 1.6ms
 138K |  - | 300 | 300| 256 | 50 | 0.8210 | 47.6M | 1.64ms
 262K |  - | 300 | 300 | 256 | 30 | 0.8284 | 47.6M | 1.64ms
+
+**Student model: TinyBERT**
+
+NE count train**  | Epochs | F1 score | Size | Avg time
+--- | --- | --- | --- | ---
+262K | 30 | 0.8452 | 54M | 3.9ms
+
 
 
 &ast; classifier hidden size '-' means one linear layer was used
