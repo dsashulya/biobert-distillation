@@ -24,7 +24,8 @@ Done as in [Dai and Adel, 2020](https://arxiv.org/pdf/2010.11683.pdf) except for
 All augmentation approaches use *p=0.5*.
 
 ### Results
-####W/O distillation
+
+#### W/O distillation
 
 NE count train** | Learning rate  | BERT embeddings | Embedding size | LSTM hidden size | Classifier hidden size* | Epochs | F1 score | Size
 ----- | ------------ | ------------- | ------------ | ------------- | ------------ | ------------ | -------- | ------
@@ -34,7 +35,7 @@ NE count train** | Learning rate  | BERT embeddings | Embedding size | LSTM hidd
 
 
 
-####With distillation  
+#### With distillation  
 **Teacher model**
 
 NE count train** | Learning rate  | Epochs | F1 score | Size | Avg time
