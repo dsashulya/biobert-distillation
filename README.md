@@ -11,7 +11,7 @@ python distillation.py --task_name ner --model_name bilstm  --path_to_train /bc2
 TinyBert
 
 ```
-python distillation.py --task_name ner --model_name tinybert  --path_to_train /home/denisova/pycharm/diff-pruning/bc2gm/train_aug3.tsv --path_to_val /home/denisova/pycharm/diff-pruning/bc2gm/val.tsv --teacher_model_name_or_path dmis-lab/biobert-base-cased-v1.1  --batch_size 32 --lr_params 1e-3  --num_train_epochs 50 --eval_steps 50 --logging_steps 50 --save_steps 10  --weight_decay 1e-2 --teacher_checkpoint biobert_state_dict.pt  --distillation 1 --do_train 1
+python distillation.py --task_name ner --model_name tinybert  --path_to_train /bc2gm/train_aug3.tsv --path_to_val /bc2gm/val.tsv --teacher_model_name_or_path dmis-lab/biobert-base-cased-v1.1  --batch_size 32 --lr_params 1e-3  --num_train_epochs 50 --eval_steps 50 --logging_steps 50 --save_steps 10  --weight_decay 1e-2 --teacher_checkpoint biobert_state_dict.pt  --distillation 1 --do_train 1
 ```
 
 ### Data augmentation
