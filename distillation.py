@@ -236,7 +236,7 @@ def init_model(args):
 
         teacher_tokenizer = BertTokenizer.from_pretrained(args.teacher_model_name_or_path)
 
-    if args.student_model_name_or_path is None:
+    if args.model_name.lower() == 'bilstm':
         config = BiLSTMConfig(
             n_layers=args.n_layers,
             embedding_size=args.embedding_size,
@@ -387,6 +387,7 @@ class BiLSTMOutput:
 
 
 def train(args):
+    assert args.model_name.lower() in ['bilstm', 'tinybert'], "Model not supported"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     args.device = device
     saving_name = f'{args.model_name}-{datetime.now():%Y%m%d-%H%M-%S}'
