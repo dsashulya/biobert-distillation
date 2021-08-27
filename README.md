@@ -2,8 +2,16 @@
 
 [BioBERT pretrained on BC2GM (--teacher_checkpoint)](https://drive.google.com/file/d/1MvXOGpR7JN3iAh2NO1UAu1iHGGkY6358/view?usp=sharing)
 
+BiLSTM:
+
 ```
-python distillation.py --task_name ner --model_name bilstm  --path_to_train /bc2gm/train_aug.tsv --path_to_val /bc2gm/val.tsv --model_name_or_path dmis-lab/biobert-base-cased-v1.1 --batch_size 32 --lr_params 1e-3  --num_train_epochs 50 --eval_steps 50 --logging_steps 10 --save_steps 10  --weight_decay 1e-2 --teacher_checkpoint biobert_state_dict.pt --do_train 1 --distillation 1
+python distillation.py --task_name ner --model_name bilstm  --path_to_train /bc2gm/train_aug3.tsv --path_to_val /bc2gm/val.tsv --teacher_model_name_or_path dmis-lab/biobert-base-cased-v1.1 --batch_size 32 --lr_params 1e-3  --num_train_epochs 50 --eval_steps 50 --logging_steps 10 --save_steps 10  --weight_decay 1e-2 --teacher_checkpoint biobert_state_dict.pt --embedding_type train --embedding_size 300 --hidden_size 300 --classifier_size 256 --do_train 1 --distillation 1
+```
+
+TinyBert
+
+```
+python distillation.py --task_name ner --model_name tinybert  --path_to_train /home/denisova/pycharm/diff-pruning/bc2gm/train_aug3.tsv --path_to_val /home/denisova/pycharm/diff-pruning/bc2gm/val.tsv --teacher_model_name_or_path dmis-lab/biobert-base-cased-v1.1  --batch_size 32 --lr_params 1e-3  --num_train_epochs 50 --eval_steps 50 --logging_steps 50 --save_steps 10  --weight_decay 1e-2 --teacher_checkpoint biobert_state_dict.pt  --distillation 1 --do_train 1
 ```
 
 ### Data augmentation
