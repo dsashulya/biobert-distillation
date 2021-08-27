@@ -40,7 +40,7 @@ NE count train** | Learning rate  | BERT embeddings | Embedding size | LSTM hidd
 
 NE count train** | Learning rate  | Epochs | F1 score | Size | Avg time
 ----- | ------------ | ------------- | ------------ | ------------- | ---
-15K | 1e-5 | 80 | 0.8663 | 411M | 9.1ms
+15K | 1e-5 | 80 | 0.8628 | 411M | 9.1ms
 
 
 **Student model: BiLSTM**
